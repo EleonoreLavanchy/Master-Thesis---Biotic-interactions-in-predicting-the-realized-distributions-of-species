@@ -1,0 +1,82 @@
+---
+title: "Model Parameters Selection"
+author: "Eléonore Lavanchy"
+date: "17 09 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setting}
+setwd("~/UNIL/Master/2th semester/Master Project/Data")
+library(glmulti)
+Tot_df <- read.csv("Total_sp_env_dataframe.csv")
+Species <- subset(Tot_df, select = -c(Plot ,X ,Y ,GS_S_Rad , GS_p, GS_t, pH, slope))
+```
+
+```{r glmulti, results = 'hide', warning = FALSE}
+
+spnames <- colnames(Species)
+
+# create an empty list with a slot for each species
+formulas_glm <- vector(mode="list", length(spnames))
+# name the slots based on species names
+names(formulas_glm) <- spnames
+
+# loop through all the species
+for (i in 1:length(spnames)) {
+  
+  species1 <- Species[,i] # extract the species' presence-absence info
+  
+  glmulti_model <- glmulti(y = species1 ~ pH + slope + GS_S_Rad + GS_t + GS_p +
+                             I(pH^2) + I(slope^2) + I(GS_S_Rad^2) + I(GS_t^2) +
+                             I(GS_p^2),  data = Tot_df, level=1, maxsize=10,
+                           confsetsize=1, plotty=FALSE, family="binomial")
+  
+  formula_glm <- summary(glmulti_model)[[10]]
+  
+  # sometimes the formula became so long that it was split to two!
+  #This tests if the formula is splitted, and combines them to one.
+  if (length(formula_glm)>1) { formula_glm <- paste(formula_glm[1],
+                                                    formula_glm[2], sep="")}                    
+  formulas_glm[[i]] <- formula_glm
+}
+
+```
+
+Creating a matrix to fill up with results to how many times arguments are used through all the species.
+
+```{r Matrix}
+
+Matrix_term <- matrix(data = NA, nrow = 100, ncol = 10)
+colnames(Matrix_term) <- c("pH_lin", "slope_lin", "GS_Rad_lin", "GS_t_lin", "GS_p_lin", "pH_sec_or", "slope_sec_or", "GS_Rad_sec_or", "GS_t_sec_or", "GS_p_sec_or")
+rownames(Matrix_term) <- spnames
+str(Matrix_term)
+
+#To see if the argument is used
+varnames <- c("pH", "slope", "GS_S_Rad", "GS_t", "GS_p", "I(pH^2)", "I(slope^2)", "I(GS_S_Rad^2)", "I(GS_t^2)", "I(GS_p^2)")
+
+for (l in 1:length(spnames)) {
+  for (m in 1:length(varnames)) {
+    if(grepl(varnames[m],formulas_glm[[l]], fixed = TRUE) == TRUE){
+      Matrix_term[l,m] <- 1
+    }
+    else {Matrix_term[l,m] <- 0}
+  }
+}
+
+time_of_occurence <- vector(length = length(varnames))
+names(time_of_occurence) <- varnames
+
+for (n in 1:length(varnames)) {
+  time_of_occurence[n] <- length(Matrix_term[Matrix_term[,n]]==1)
+}
+
+time_of_occurence
+
+write.table(time_of_occurence, file = "time of occurence, level = 1",
+            col.names = FALSE)
+
+```

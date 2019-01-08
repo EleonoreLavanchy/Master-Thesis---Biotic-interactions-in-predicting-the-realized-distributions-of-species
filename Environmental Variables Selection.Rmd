@@ -1,0 +1,424 @@
+---
+title: "Environmental Variables Selection Script"
+author: "Eléonore Lavanchy"
+date: "13 09 2018"
+output: pdf_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r settings, include = FALSE}
+setwd("~/UNIL/Master/2th semester/Master Project/Data")
+library("raster")
+library("rgdal")
+library("sp")
+```
+
+First the data have been loaded
+
+```{r loading data, }
+#Soil : pH and C
+ph <- raster("pH_25m.tif")
+C <- raster("d13C_25m.tif")
+
+#Evapotranspiration (RECHALPs)
+setwd("./etp_monthly")
+filenames_etp <- list.files(pattern="*.tif")
+etp <- stack("etp1.current.tif")
+etp <- stack(filenames_etp)
+x <- path.expand("./etp_monthly")
+#Temperature and Water (gdd & T_RECHALPs & Bioclim & TIP)
+setwd("../")
+gdd <- raster("gdd.current.tif")
+load("current (t&p).RDATA")
+load("topo.RDATA")
+
+setwd("./Bioclim variables 1981-2010")
+filenames_bioclim <- list.files(path = getwd(), pattern="*.tif")
+bioclim <- stack(filenames_bioclim)
+
+#Solar Radiation (SRad & SRel)
+setwd("~/UNIL/Master/2th semester/Master Project/Data/S_Rel8110")
+filenames_S_Rel <- list.files(path = getwd(), pattern="*.tif")
+S_Rel <- stack(filenames_S_Rel)
+
+setwd("~/UNIL/Master/2th semester/Master Project/Data/SRad_monthly")
+filenames_S_Rad <- list.files(path = getwd(), pattern="*.tif")
+S_Rad <- stack(filenames_S_Rad)
+```
+
+The data must have the same resolution, the sane dimensions and the same CRS.
+So they all have been changed according to the raster with the smallest dimensions (C)
+
+```{r resolution checking}
+res(bioclim)
+res(C)
+res(current)
+res(etp)
+res(gdd)
+res(ph)
+res(S_Rad)
+res(S_Rel)
+res(topo)
+
+bioclim_cropped <- crop(bioclim, C)
+current_cropped <- crop(current, C)
+etp_cropped <- crop(x = etp, y = C)
+gdd_cropped <- crop(x = gdd, y = C)
+ph_cropped <- crop(x = ph, y = C)
+S_Rad_cropped <- crop(x = S_Rad, y = C)
+S_Rel_cropped <- crop(x = S_Rel, y = C)
+topo_cropped <- crop(x = topo, y = C)
+
+crs(bioclim_cropped) <- etp@crs
+crs(C) <- etp@crs
+crs(current_cropped) <- etp@crs
+crs(etp_cropped) <- etp@crs
+crs(gdd_cropped) <- etp@crs
+crs(ph_cropped) <- etp@crs
+crs(S_Rad_cropped) <- etp@crs
+crs(S_Rel_cropped) <- etp@crs
+crs(topo_cropped) <- etp@crs
+```
+
+C must also be changed. As both resample methods give the same results I chose the bilinear method.
+
+```{r C}
+C_bil <- resample(x = C, y = etp_cropped, method = "bilinear")
+```
+
+Stacking all rasters togethere
+
+```{r raster All}
+rasterALL <- stack(bioclim_cropped, C_bil, current_cropped, etp_cropped, gdd_cropped, ph_cropped, S_Rad_cropped, S_Rel_cropped, topo_cropped)
+
+All_parameter_df <- as.data.frame(rasterALL, na.rm = TRUE)
+```
+
+PCA
+
+```{r PCA}
+library("FactoMineR")
+library("factoextra")
+
+pca_all <- PCA(All_parameter_df, scale.unit = TRUE, graph = FALSE)
+
+fviz_eig(pca_all, addlabels = T, ylim=c(0,75))
+fviz_pca_var(pca_all, col.var = "black")
+loadings <- pca_all$var$coord
+loadings
+
+```
+
+Looking at the last graph and at the Loadings, we can divide the variables in 5 groups
+
+- The ones in the positive dimension 1 (principally Temperature and some Srel)
+  - Temperature (bio1_tmean, bio10_twarmq, bio11_tcolq, bio5_tmaxw, bio6_tminc,        bio8_twetq, bio9_tdryq, t1 --> t12, tmin, tmax, tmean, gdd, gdd.current)
+  - Evapotranspiration (etp, etp1.current --> etp12.current)
+  - SrelM_8110_m3_Rechalp_bilinear, m3 --> m9
+  
+- The ones in the negative dimension 1 (principally precipitations and some Srel)
+  - Precipitations (bio12_p, bio13_pwet, bio14_pdry, bio16_pwetq, bio17_pdryq,         bio19_pwarmq, bio3_iso, p1 --> p12, pmin, pmax, psum)
+  - SrelM_8110_m1_Rechalp_bilinear, m1, m2, m10, m11, m12
+
+- The ones in the dimension 2 (positive) (principally Solar Radiations)
+  - SradM_m1 --> SradM_m12
+  - asp
+  
+- The ones to remove because explain very little variance
+  - bio15_ps, bio4_ts, bio2, bio7
+
+- The ones explaining very little variance but still important ecologically
+  - pH_25m, topos, slp
+
+Thus, the data have been divided to perform separated PCA
+
+```{r PCA dividing}
+df_Dim1_pos_Temperature <- subset(All_parameter_df,
+                                  select = c(bio1_tmean_8110, bio10_twarmq_8110,
+                                             bio11_tcoldq_8110, bio5_tmaxw_8110,
+                                             bio6_tminc_8110, bio8_twetq_8110,
+                                             bio9_tdryq_8110, t1, t2, t3, t4, t5,
+                                             t6, t7 ,t8 ,t9 ,t10 ,t11 ,t12, tmin,
+                                             tmax, tmean, gdd, gdd.current, etp,
+                                             etp1.current, etp2.current,
+                                             etp3.current, etp4.current,
+                                             etp5.current, etp6.current,
+                                             etp7.current, etp8.current,
+                                             etp9.current, etp10.current,
+                                             etp11.current,etp12.current,
+                                             SrelM_8110_m3_Rechalp_bilinear,
+                                             SrelM_8110_m4_Rechalp_bilinear,
+                                             SrelM_8110_m5_Rechalp_bilinear,
+                                             SrelM_8110_m6_Rechalp_bilinear,
+                                             SrelM_8110_m7_Rechalp_bilinear,
+                                             SrelM_8110_m8_Rechalp_bilinear,
+                                             SrelM_8110_m9_Rechalp_bilinear))
+
+df_Dim1_neg_Precipitations <- subset(All_parameter_df,
+                                     select = c(bio12_p_8110, bio13_pwet_8110,
+                                                bio14_pdry_8110, bio16_pwetq_8110,
+                                                bio17_pdryq_8110,bio18_pwarmq_8110,
+                                                bio19_pcoldq_8110,bio3_iso_8110,
+                                                p1, p2, p3, p4, p5, p6, p7, p8, p9,
+                                                p10, p11, p12, pmin, pmax, psum,
+                                                SrelM_8110_m1_Rechalp_bilinear,
+                                                SrelM_8110_m2_Rechalp_bilinear,
+                                                SrelM_8110_m10_Rechalp_bilinear,
+                                                SrelM_8110_m11_Rechalp_bilinear,
+                                                SrelM_8110_m12_Rechalp_bilinear,
+                                                d13C_25m))
+
+df_Dim2_pos_SolarRad <- subset(All_parameter_df,
+                               select = c(SradM_m1, SradM_m2, SradM_m3, SradM_m4,
+                                          SradM_m5, SradM_m6, SradM_m7, SradM_m8,
+                                          SradM_m9, SradM_m10, SradM_m11,
+                                          SradM_m12, asp))
+
+df_impo_Ecology <- subset(All_parameter_df, select = c(pH_25m, topos, slp))
+
+```
+
+First the PCA on the ecologically important variables.
+
+```{r PCA eco}
+
+pca_eco <- PCA(df_impo_Ecology, scale.unit = TRUE, graph = FALSE)
+
+fviz_eig(pca_eco, addlabels = T, ylim=c(0,75))
+
+fviz_pca_var(pca_eco, col.var = "black")
+```
+
+Correlation tests and loadings to see which variables take into the analyses
+
+```{r cor test eco variables}
+
+cor.test(All_parameter_df$pH_25m,All_parameter_df$topos)
+cor.test(All_parameter_df$pH_25m, All_parameter_df$slp)
+cor.test(All_parameter_df$slp,All_parameter_df$topos)
+
+loadings_eco <- pca_eco$var$coord
+loadings_eco
+
+```
+
+In the end I selected pH because soil variables are important ecologically (and pH seems a quite good variance explanator) and slope as they are not correlated and as Loadings show that slope is much more explanative for the second dimension.
+
+Then the PCA on the first dimension.
+
+```{r PCA dim1 pos}
+pca_dim1_pos <- PCA(df_Dim1_pos_Temperature, scale.unit = TRUE, graph = FALSE)
+
+fviz_eig(pca_dim1_pos, addlabels = T, ylim=c(0,75))
+
+fviz_pca_var(pca_dim1_pos, col.var = "black")
+```
+
+```{r PCA dim 1 neg}
+pca_dim1_neg <- PCA(df_Dim1_neg_Precipitations, scale.unit = TRUE, graph = FALSE)
+
+fviz_eig(pca_dim1_neg, addlabels = T, ylim=c(0,75))
+
+fviz_pca_var(pca_dim1_neg, col.var = "black")
+```
+
+Srel variables are more different than the others and seem to explain less variance in both PCA positive and negative, thus, the variables will be remove to perform other PCA on dimension 1 positive and negative.
+
+```{r PCA dim 1 pos sans SRel}
+
+df_Dim1_pos_Temperature_2 <- subset(All_parameter_df,
+                                  select = c(bio1_tmean_8110, bio10_twarmq_8110,
+                                             bio11_tcoldq_8110, bio5_tmaxw_8110,
+                                             bio6_tminc_8110, bio8_twetq_8110,
+                                             bio9_tdryq_8110, t1, t2, t3, t4, t5,
+                                             t6, t7 ,t8 ,t9 ,t10 ,t11 ,t12, tmin,
+                                             tmax, tmean, gdd, gdd.current, etp,
+                                             etp1.current, etp2.current,
+                                             etp3.current, etp4.current,
+                                             etp5.current, etp6.current,
+                                             etp7.current, etp8.current,
+                                             etp9.current, etp10.current,
+                                             etp11.current,etp12.current))
+
+
+pca_dim1_pos_2 <- PCA(df_Dim1_pos_Temperature_2, scale.unit = TRUE, graph = FALSE)
+
+fviz_pca_var(pca_dim1_pos_2)
+
+loadings_dim1_pos_2 <- pca_dim1_pos_2$var$coord
+loadings_dim1_pos_2
+
+```
+
+```{r PCA dim 1 neg sans Srel}
+
+df_Dim1_neg_Precipitations_2 <- subset(All_parameter_df,
+                                     select = c(bio12_p_8110, bio13_pwet_8110,
+                                                bio14_pdry_8110, bio16_pwetq_8110,
+                                                bio17_pdryq_8110,bio18_pwarmq_8110,
+                                                bio19_pcoldq_8110,bio3_iso_8110,
+                                                p1, p2, p3, p4, p5, p6, p7, p8, p9,
+                                                p10, p11, p12, pmin, pmax, psum,
+                                                d13C_25m))
+
+pca_dim1_neg_2 <- PCA(df_Dim1_neg_Precipitations_2,
+                      scale.unit = TRUE, graph = FALSE)
+
+fviz_pca_var(pca_dim1_neg_2)
+
+loadings_dim1_neg_2 <- pca_dim1_neg_2$var$coord
+loadings_dim1_neg_2
+
+```
+
+For both positive and negative Dimension 1 variables, all parameter are quite similar, nevertheless, the montly and sum of precipitations and temperature measures will be kept in order to be similar to the data available for the solar radiations on PCA dimension 2.
+
+```{r PCA dim 2}
+
+pca_dim2_pos <- PCA(df_Dim2_pos_SolarRad, scale.unit = TRUE, graph = FALSE)
+
+fviz_eig(pca_dim2_pos, addlabels = T, ylim=c(0,75))
+
+fviz_pca_var(pca_dim2_pos, col.var = "black")
+
+loadings_dim2 <- pca_dim2_pos$var$coord
+loadings_dim2
+
+```
+
+asp will be removed as it explains less variance than the other parameters (for the two first dimensions at least but the thirs dimension is only 3.5% of total variance which is few).
+
+Now I have to choose between using the sum of year variables or the Growing season variables (from May to September) for temperature, precipitations and Solar radiations.
+
+Creating variables with Growing season and all year
+
+```{r GS and Tot creation}
+
+#### TEMPERATURE ####
+
+GS_t <- All_parameter_df$t5 + All_parameter_df$t6 + All_parameter_df$t7 +
+  All_parameter_df$t8 + All_parameter_df$t9
+
+TotYear_t <- All_parameter_df$t1 + All_parameter_df$t2 + All_parameter_df$t3 +
+  All_parameter_df$t4 + All_parameter_df$t5 + All_parameter_df$t6 +
+  All_parameter_df$t7 + All_parameter_df$t8 + All_parameter_df$t9 +
+  All_parameter_df$t10 + All_parameter_df$t11 + All_parameter_df$t12
+
+#### PRECIPITATIONS ####
+
+GS_p <- All_parameter_df$p5 + All_parameter_df$p6 + All_parameter_df$p7 +
+  All_parameter_df$p8 + All_parameter_df$p9
+
+TotYear_p <- All_parameter_df$psum
+
+#### SOLAR RADIATIONS ####
+
+GS_S_Rad <- All_parameter_df$SradM_m5 + All_parameter_df$SradM_m6 +
+  All_parameter_df$SradM_m7 + All_parameter_df$SradM_m8 +
+  All_parameter_df$SradM_m9
+
+TotYear_S_rad <- All_parameter_df$SradM_m1 + All_parameter_df$SradM_m2 +
+  All_parameter_df$SradM_m3 + All_parameter_df$SradM_m4 +
+  All_parameter_df$SradM_m10 + All_parameter_df$SradM_m5 +
+  All_parameter_df$SradM_m6 + All_parameter_df$SradM_m7 +
+  All_parameter_df$SradM_m8 + All_parameter_df$SradM_m9 +
+  All_parameter_df$SradM_m11 + All_parameter_df$SradM_m12
+
+
+```
+
+I looked at correlations between the Growing season and Total Year variables.
+
+```{r correlations tests GS and Tot}
+
+cor.test(GS_t, TotYear_t)
+cor.test(GS_p, TotYear_p)
+cor.test(GS_S_Rad, TotYear_S_rad)
+
+```
+
+As the correlations are really high for temperatures and precipitations, we can take both, it does not change a lot, thus, the choice will be made with a PCA looking at the Loadings for the Solar Radiations.
+
+```{r semi final PCA}
+
+pH <- All_parameter_df$pH_25m
+slope <- All_parameter_df$slp
+
+Semi_Final_Var <- cbind(pH, slope, GS_S_Rad, TotYear_S_rad,
+                        TotYear_t, GS_t, GS_p, TotYear_p)
+
+Semi_Final_PCA <- PCA(Semi_Final_Var, scale.unit = TRUE, graph = FALSE)
+
+fviz_eig(Semi_Final_PCA, addlabels = T, ylim=c(0,75))
+
+loadings_Semi_F <- Semi_Final_PCA$var$coord
+loadings_Semi_F
+
+fviz_pca_var(Semi_Final_PCA)
+
+
+```
+
+The Growing season measures have been chosen in the end because the Dimension 1 is more explained by Growing Season Solar Radiations (and even if GS_S_Rad explains less for the 4th dimension, the 3 first explain 88.2% of tge variance which is enough).
+
+Finally I performed a PCA with those chosen variables for visualisation
+
+```{r Final PCA}
+
+Final_Var <- cbind(pH, slope, GS_S_Rad, GS_t, GS_p)
+
+Final_PCA <- PCA(Final_Var, scale.unit = TRUE, graph = FALSE)
+
+fviz_eig(Final_PCA, addlabels = TRUE, ylim = c(0,75))
+
+fviz_pca_var(Final_PCA)
+
+loadings_Final <- Final_PCA$var$coord
+loadings_Final
+
+```
+
+Finally I performed correlation tests to see if the variables are not too correlated because it's bad for the model performances.
+
+```{r corr test FINAL}
+
+cor.test(pH,slope)
+cor.test(pH, GS_t)
+cor.test(pH, GS_p)
+cor.test(pH, GS_S_Rad)
+cor.test(slope, GS_t)
+cor.test(slope, GS_p)
+cor.test(slope, GS_S_Rad)
+cor.test(GS_t, GS_p)
+cor.test(GS_t, GS_S_Rad)
+cor.test(GS_p, GS_S_Rad)
+
+```
+
+The only correlation above 0.7 (or below -0.7) is between the Growing Season Temperatures and the Growing Season Precipitations (corr = - 0.822, P-value < 2.2e-16). But I decided to keep both as they are both ecologically important for plants !
+
+```{r writing, include=FALSE}
+
+GS_S_Rad_Raster <- overlay(S_Rad_cropped$SradM_m5, S_Rad_cropped$SradM_m6,
+                           S_Rad_cropped$SradM_m7, S_Rad_cropped$SradM_m8,
+                           S_Rad_cropped$SradM_m9, fun = sum)
+
+GS_p_Raster <- overlay(rasterALL$p5, rasterALL$p6, rasterALL$p7,
+                       rasterALL$p8, rasterALL$p9, fun = sum)
+
+GS_t_raster <- overlay(rasterALL$t5, rasterALL$t6, rasterALL$t7,
+                       rasterALL$t8, rasterALL$t9, fun = sum)
+
+Env_var_raster <- stack(GS_S_Rad_Raster, GS_p_Raster, GS_t_raster,
+                        ph_cropped, topo_cropped$slp)
+
+#As writing all together is not allowing me to keep all layers names, Raster have been writen separately ...
+
+names(Env_var_raster) <- c("GS_S_Rad","GS_p", "GS_t", "pH", "slope")
+writeRaster(x = Env_var_raster, filename = "Final_Env_var",
+            format = "raster", overwrite = TRUE)
+
+```

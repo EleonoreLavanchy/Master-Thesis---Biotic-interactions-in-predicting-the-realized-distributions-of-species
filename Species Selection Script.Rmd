@@ -1,0 +1,53 @@
+---
+title: "Plant Species Selection Script"
+author: "Eléonore Lavanchy"
+date: "13 09 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r settings, include = FALSE}
+setwd("~/UNIL/Master/2th semester/Master Project/Data")
+library("xlsx")
+```
+
+```{r reading}
+Plants_occurences <- read.table("Final_AllOcc-1.txt", header = TRUE)
+```
+
+The plants species were selected by selecting the plants with a minimum of 70 presences and absences.
+
+```{r Plant Species Selection}
+count_selected_species <- 0
+names_selected_species <- vector(mode = "character") #names of sp.
+data_selected_species <- list() #data of sp.
+for(i in 4:798) { # Because plants species starts from colunm 4.
+  # Col 1 = X coordinates, Col 2 = Y coordinates and Col 3 = Plots
+  if(length(Plants_occurences[,i][Plants_occurences[,i] == "1"]) > 70 &
+     length(Plants_occurences[,i][Plants_occurences[,i] =="0"]) > 70) {
+    count_selected_species <- count_selected_species + 1
+    names_selected_species <- append(names_selected_species ,
+                                     colnames(Plants_occurences[i]))
+    data_selected_species <- append(data_selected_species,
+                                    Plants_occurences[i])
+  }
+}
+
+count_selected_species
+names_selected_species
+# Create a dataframe with the occurences of the selected species
+selected_species_df <- as.data.frame(data_selected_species)
+#Add the X and Y coordinates as well as the Plots number
+selected_species_df <- cbind(Plants_occurences$X,Plants_occurences$Y,
+                             Plants_occurences$Plot, selected_species_df)
+#Set the columns names
+colnames(selected_species_df)[c(1,2,3)] <- c("X", "Y", "Plot")
+
+#Create an Excel file
+write.xlsx(x = selected_species_df, file = "Plants_Sp_tot.xlsx",
+           sheetName ="Plant_tot", col.names = TRUE, row.names = FALSE)
+
+```

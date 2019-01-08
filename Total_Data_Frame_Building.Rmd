@@ -1,0 +1,76 @@
+---
+title: "Total dataframe building"
+author: "Eléonore Lavanchy"
+date: "17 09 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+First, the coordinates of the plots, and the rasters must be loaded.
+
+```{r settings and loading, include = FALSE}
+setwd("~/UNIL/Master/2th semester/Master Project/Data")
+library("raster")
+library("xlsx")
+
+plots <- read.csv("all_plots_coords.csv", sep = ";")
+coord_plots <- subset(plots, select = - Plot)
+
+elev <- read.csv("Elevation and plots.csv")
+elev <- subset(elev, select = -c(X,Y))
+
+GS_Rad_raster <- stack("Final_Env_var.grd", bands = 1)
+GS_p_raster <- stack("Final_Env_var.grd", bands = 2)
+GS_t_raster <- stack("Final_Env_var.grd", bands = 3)
+pH_raster <- stack("Final_Env_var.grd", bands = 4)
+slope_raster <- stack("Final_Env_var.grd", bands = 5)
+
+```
+
+Then, the values in the plots must be extracted from the rasters
+
+```{r extracting values}
+
+GS_Rad_vec <- extract(GS_Rad_raster, coord_plots)
+GS_p_vec <- extract(GS_p_raster, coord_plots)
+GS_t_vec <- extract(GS_t_raster, coord_plots)
+pH_vec <- extract(pH_raster, coord_plots)
+slope_vec <- extract(slope_raster, coord_plots)
+
+```
+
+
+Building a dataframe with plots, coordinates and environmental values
+
+```{r dataframe env & plots}
+
+Plots_env_df <- cbind(plots, GS_Rad_vec, GS_p_vec, GS_t_vec,
+                      pH_vec, slope_vec)
+
+Plots_env_df <- merge(Plots_env_df, elev, by = "Plot")
+
+```
+
+Then the presences and absences of plants must be added to this dataframe
+
+```{r plants loading, include = FALSE}
+plants_occ <- read.xlsx("Plants_Sp_tot.xlsx", sheetIndex = 1)
+plants_occ <- subset(plants_occ, select = -c(X,Y))
+```
+
+```{r adding plants values}
+
+Total_sp_env_dataframe <- merge(Plots_env_df, plants_occ, by = "Plot")
+
+```
+
+Then : writing : Total_sp_env_dataframe.csv file.
+
+```{r writing}
+
+write.csv(Total_sp_env_dataframe, file = "Total_sp_env_dataframe.csv",
+          row.names = FALSE)
+```
